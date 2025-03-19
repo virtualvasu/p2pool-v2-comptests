@@ -3,13 +3,12 @@ use bitcoincore_rpc::bitcoin::{ Amount, Network, Txid };
 use bitcoincore_rpc::json::{ CreateRawTransactionInput, SignRawTransactionResult };
 use std::collections::HashMap;
 use hex;
-// use serde_json::json;
 
 fn main() {
     // Connect to Bitcoin Core RPC
     let rpc = Client::new(
         "http://localhost:18443",
-        Auth::UserPass("alice".to_string(), "password".to_string())
+        Auth::UserPass("vasu".to_string(), "password".to_string())
     ).unwrap();
 
     // Create a new wallet
@@ -25,7 +24,7 @@ fn main() {
     // Connect to the new wallet
     let wallet_rpc = Client::new(
         &format!("http://localhost:18443/wallet/{}", wallet_name),
-        Auth::UserPass("alice".to_string(), "password".to_string())
+        Auth::UserPass("vasu".to_string(), "password".to_string())
     ).unwrap();
 
     // Get a new address from the wallet
