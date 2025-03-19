@@ -6,24 +6,11 @@ This project contains a Rust script that interacts with a Bitcoin node running i
 
 - Linux OS
 - Docker and Docker Compose installed
-- Rust (Cargo included) installed
+- Rust (Cargo included) installed (version **1.85.0** or newer)
 
 ### Install Docker
-If you don't have Docker installed, follow the instructions for your Linux distribution:
-- **Ubuntu/Debian:**
-  ```bash
-  sudo apt-get update
-  sudo apt-get install -y docker.io docker-compose
-  ```
-- **Fedora:**
-  ```bash
-  sudo dnf install -y docker docker-compose
-  ```
-After installation, make sure Docker is running:
-```bash
-sudo systemctl start docker
-sudo systemctl enable docker
-```
+If you don't have Docker installed, follow the official installation guide for your Linux distribution:
+- [Get Docker](https://docs.docker.com/get-docker/)
 
 ### Install Rust and Cargo
 If Rust isn't installed, you can install it with Rustup:
@@ -31,7 +18,11 @@ If Rust isn't installed, you can install it with Rustup:
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source $HOME/.cargo/env
 ```
-For more details, visit the official Rust site: [https://www.rust-lang.org/tools/install](https://www.rust-lang.org/tools/install)
+Ensure you have **Rust 1.85.0** or newer:
+```bash
+rustc --version
+```
+For more details, visit the official Rust site: [Install Rust (1.85.0 or newer)](https://www.rust-lang.org/tools/install)
 
 ## Directory Structure
 ```
