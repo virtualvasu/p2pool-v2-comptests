@@ -1,107 +1,153 @@
 use bitcoincore_rpc::{ Auth, Client, RpcApi };
 use bitcoincore_rpc::bitcoin::{ Amount, Network, Txid };
-use bitcoincore_rpc::json::{ CreateRawTransactionInput, SignRawTransactionResult };
+use bitcoincore_rpc::json::{
+    CreateRawTransactionInput,
+    SignRawTransactionResult,
+    FundRawTransactionOptions,
+};
 use std::collections::HashMap;
-use hex;
+use std::error::Error;
 
-fn main() {
-    // Connect to Bitcoin Core RPC
-    let rpc = Client::new(
-        "http://localhost:18443",
-        Auth::UserPass("vasu".to_string(), "password".to_string())
-    ).unwrap();
+// Create a connection to the Bitcoin node
+fn create_rpc_client(url: &str, username: &str, password: &str) -> Result<Client, Box<dyn Error>> {
+    let rpc = Client::new(url, Auth::UserPass(username.to_string(), password.to_string()))?;
+    Ok(rpc)
+}
 
-    // Create a new wallet
-    let wallet_name = "testwallet_p2pool";
-    let create_wallet_result = rpc.call::<serde_json::Value>("createwallet", &[wallet_name.into()]);
-
-    // Check if the wallet creation was successful or already exists
-    match create_wallet_result {
+// Create a new wallet or use existing one
+fn setup_wallet(rpc: &Client, wallet_name: &str) -> Result<Client, Box<dyn Error>> {
+    // Try to create wallet (may fail if already exists)
+    match rpc.call::<serde_json::Value>("createwallet", &[wallet_name.into()]) {
         Ok(_) => println!("Wallet '{}' created successfully!", wallet_name),
-        Err(e) => println!("Wallet creation failed: {}", e),
+        Err(e) => println!("Wallet creation note: {}", e),
     }
 
-    // Connect to the new wallet
+    // Connect to the wallet
     let wallet_rpc = Client::new(
         &format!("http://localhost:18443/wallet/{}", wallet_name),
         Auth::UserPass("vasu".to_string(), "password".to_string())
-    ).unwrap();
+    )?;
 
-    // Get a new address from the wallet
-    let first_address = wallet_rpc.get_new_address(None, None).unwrap();
-    println!("Generated new address: {:?}", first_address);
+    Ok(wallet_rpc)
+}
 
-    let checked_address = first_address.clone();
+// Generate blocks to an address
+fn generate_blocks(
+    rpc: &Client,
+    address: &bitcoincore_rpc::bitcoin::Address,
+    count: u64
+) -> Result<Vec<bitcoincore_rpc::bitcoin::BlockHash>, Box<dyn Error>> {
+    let network_address = address.clone();
+    if network_address.network != Network::Regtest {
+        return Err("Address is not for regtest network".into());
+    }
 
-    // Generate blocks to the new address
-    rpc.generate_to_address(
-        101,
-        &checked_address.clone().require_network(Network::Regtest).unwrap()
-    ).unwrap();
+    let block_hashes = rpc.generate_to_address(count, &network_address)?;
+    Ok(block_hashes)
+}
 
-    // List unspent transactions
-    let unspent = rpc.list_unspent(None, None, None, None, None).unwrap();
-    let first_utxo = &unspent[0];
-    let txid: Txid = first_utxo.txid;
-    let vout = first_utxo.vout;
-
-    // Create raw transaction inputs
-    let input = CreateRawTransactionInput {
-        txid: txid, // Dereferenced txid
-        vout,
-        sequence: None,
-    };
-
+// Create, fund, sign and broadcast a transaction
+fn create_and_send_transaction(
+    rpc: &Client,
+    input: CreateRawTransactionInput,
+    output_address: &bitcoincore_rpc::bitcoin::Address,
+    amount: f64,
+    fee_rate: f64
+) -> Result<Txid, Box<dyn Error>> {
     // Prepare outputs with a HashMap
     let mut outputs = HashMap::new();
-    outputs.insert(
-        checked_address.clone().require_network(Network::Regtest).unwrap().to_string(),
-        Amount::from_btc(10.0).unwrap()
-    );
+    if output_address.network != Network::Regtest {
+        return Err("Output address is not for regtest network".into());
+    }
+
+    outputs.insert(output_address.clone().to_string(), Amount::from_btc(amount)?);
 
     // Create raw transaction
-    let first_raw_tx = rpc.create_raw_transaction(&[input], &outputs, None, None).unwrap();
+    let raw_tx = rpc.create_raw_transaction(&[input], &outputs, None, None)?;
+    println!("Raw transaction created");
 
-    // 💰 Fund raw transaction with fee_rate = 0
-    let fund_options = bitcoincore_rpc::json::FundRawTransactionOptions {
-        fee_rate: Some(Amount::from_btc(0.1).unwrap()),
+    // Fund raw transaction
+    let fund_options = FundRawTransactionOptions {
+        fee_rate: Some(Amount::from_btc(fee_rate)?),
         ..Default::default()
     };
 
-    let funded_result = rpc
-        .fund_raw_transaction(&first_raw_tx, Some(&fund_options), Some(false))
-        .unwrap();
+    println!("Funding raw transaction");
 
+    let funded_result = rpc.fund_raw_transaction(&raw_tx, Some(&fund_options), Some(false))?;
     let funded_raw_tx = funded_result.hex;
 
     // Sign raw transaction
     let SignRawTransactionResult {
-        hex: first_signed_tx_hex,
+        hex: signed_tx_hex,
         complete,
         ..
-    } = rpc.sign_raw_transaction_with_wallet(&funded_raw_tx, None, None).unwrap();
+    } = rpc.sign_raw_transaction_with_wallet(&funded_raw_tx, None, None)?;
 
-    assert!(complete, "Transaction signing failed");
-
-    println!("First Signed Transaction Hex: {}", hex::encode(first_signed_tx_hex.clone()));
+    if !complete {
+        return Err("Transaction signing failed".into());
+    }
+    else{
+        println!("Transaction signed successfully");
+    }
 
     // Broadcast the signed transaction
-    let first_txid = rpc.send_raw_transaction(&first_signed_tx_hex).unwrap();
-    println!("First Transaction ID: {}", first_txid);
+    let txid = rpc.send_raw_transaction(&signed_tx_hex)?;
+    println!("Transaction broadcasted");
 
-    // Generate a block to confirm the transaction
-    rpc.generate_to_address(
-        1,
-        &checked_address.clone().require_network(Network::Regtest).unwrap()
-    ).unwrap();
+    Ok(txid)
+}
 
-    // Prepare a second transaction
-    let second_address = rpc
-        .get_new_address(None, None)
-        .unwrap()
-        .require_network(Network::Regtest)
-        .unwrap();
-    let second_checked_address = second_address.clone();
+fn main() -> Result<(), Box<dyn Error>> {
+    // Connect to Bitcoin Core RPC
+    let rpc = create_rpc_client("http://localhost:18443", "vasu", "password")?;
+
+    // Setup wallet
+    let wallet_name = "testwallet_p2pool";
+    let wallet_rpc = setup_wallet(&rpc, wallet_name)?;
+
+    // Get a new address from the wallet
+    let first_address = wallet_rpc.get_new_address(None, None)?;
+    println!(
+        "Generated new address: {}",
+        &format!("{:?}", first_address)[26..].trim_end_matches(')')
+    );
+
+    //generating 101 blocks to get the coinbase transaction for first address
+    let first_address = wallet_rpc.get_new_address(None, None)?.require_network(Network::Regtest)?;
+    generate_blocks(&rpc, &first_address, 101)?;
+    println!("Generated 101 blocks to get Coinbase Transaction");
+
+    // Get wallet balance
+    let balance = wallet_rpc.get_balance(None, None)?;
+    println!("Wallet balance: {} BTC", balance);
+
+    // List unspent transactions to find an input for our first transaction
+    let unspent = rpc.list_unspent(None, None, None, None, None)?;
+    if unspent.is_empty() {
+        return Err("No unspent outputs found".into());
+    }
+
+    let first_utxo = &unspent[0];
+    let input = CreateRawTransactionInput {
+        txid: first_utxo.txid,
+        vout: first_utxo.vout,
+        sequence: None,
+    };
+
+    // Create and send first transaction
+    println!("Using coinbase output for first transaction");
+    
+    let first_txid = create_and_send_transaction(&rpc, input, &first_address, 10.0, 0.1)?;
+
+    // Generate a block to confirm the first transaction
+    generate_blocks(&rpc, &first_address, 1)?;
+    println!("First transaction ID: {}", first_txid);
+
+    // Prepare and send second transaction using the output from the first
+    let second_address = rpc.get_new_address(None, None)?.require_network(Network::Regtest)?;
+
+    println!("Using first transaction output for second transaction");
 
     let second_input = CreateRawTransactionInput {
         txid: first_txid,
@@ -109,43 +155,14 @@ fn main() {
         sequence: None,
     };
 
-    let mut second_outputs = HashMap::new();
-    second_outputs.insert(second_checked_address.to_string(), Amount::from_btc(5.0).unwrap());
+    // Create and send second transaction
+    let second_txid = create_and_send_transaction(&rpc, second_input, &second_address, 5.0, 0.1)?;
 
-    // Create second raw transaction
-    let second_raw_tx = rpc.create_raw_transaction(&[second_input], &second_outputs, None, None).unwrap();
+    // Generate blocks to confirm the second transaction
+    generate_blocks(&rpc, &first_address, 101)?;
+    println!("Second transaction ID: {}", second_txid);
 
-    // 💰 Fund raw transaction with fee_rate = 0
-    let fund_options = bitcoincore_rpc::json::FundRawTransactionOptions {
-        fee_rate: Some(Amount::from_btc(0.1).unwrap()),
-        ..Default::default()
-    };
+    println!("All steps of competency tests successfully completed!");
 
-    let funded_result = rpc
-        .fund_raw_transaction(&second_raw_tx, Some(&fund_options), Some(false))
-        .unwrap();
-
-    let funded_raw_tx = funded_result.hex;
-
-    // Sign raw transaction
-    let SignRawTransactionResult {
-        hex: second_signed_tx_hex,
-        complete,
-        ..
-    } = rpc.sign_raw_transaction_with_wallet(&funded_raw_tx, None, None).unwrap();
-
-    assert!(complete, "Transaction signing failed");
-
-    println!("second Signed Transaction Hex: {}", hex::encode(second_signed_tx_hex.clone()));
-
-    let second_txid = rpc.send_raw_transaction(&second_signed_tx_hex).unwrap();
-    println!("Second Transaction ID: {}", second_txid);
-
-    // Generate a block to confirm the second transaction
-    rpc.generate_to_address(
-        101,
-        &checked_address.require_network(Network::Regtest).unwrap()
-    ).unwrap();
-
-    println!("Both transactions successfully completed and mined!");
+    Ok(())
 }
