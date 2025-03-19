@@ -47,7 +47,15 @@ git clone https://github.com/virtualvasu/p2pool-v2-comptests.git
 cd p2pool-v2-comptests
 ```
 
-### 2. Run the script
+### 2. Ensure Docker permissions
+If your user isn't part of the Docker group (i.e., you need `sudo` to run Docker), add yourself to the group:
+```bash
+sudo usermod -aG docker $USER
+newgrp docker
+```
+This ensures you can run Docker commands without sudo.
+
+### 3. Run the script
 Execute everything with a single command:
 ```bash
 ./start.sh
@@ -70,5 +78,5 @@ The `docker-compose.yaml` file ensures the node runs in an isolated environment.
 - The `start.sh` script automates everything, ensuring the node starts and stops cleanly.
 - Ensure Docker and Rust/Cargo are properly installed before running the script.
 
-Happy hacking!
+
 
