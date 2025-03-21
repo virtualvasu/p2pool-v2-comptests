@@ -67,7 +67,7 @@ check_test() {
   TOTAL=$((TOTAL+1))
   
   if eval "$condition"; then
-    log_success "✅ $name - $success"
+    log_success "✔ $name - $success"
     PASSED=$((PASSED+1))
     return 0
   else
@@ -122,9 +122,9 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-# Run Rust app
+# Run Rust script
 log_header "TRANSACTION CREATION"
-log_info "Running Rust app..."
+log_info "Running Rust script..."
 
 echo -e "${YELLOW}----------------------------------------${NC}"
 rust_output=$(cargo run 2>&1 | tee /dev/tty)
@@ -182,18 +182,11 @@ else
   is_coinbase=$(echo "$input1_data" | grep -oP '"coinbase":"\K[0-9a-f]+')
   
   if [ -n "$is_coinbase" ]; then
-    log_success "TX1 source is a coinbase tx"
+    log_success "TX1 source is a Coinbase transaction"
   else
-    log_info "TX1 source is not a coinbase tx"
+    log_info "TX1 source is not a Coinbase transaction"
   fi
 fi
-
-# Get TX1 details
-tx1_value=$(echo "$tx1_data" | grep -oP '"value":\K[0-9.]+')
-tx1_addr=$(echo "$tx1_data" | grep -oP '"address":"\K[13a-km-zA-HJ-NP-Z1-9]+')
-tx1_addr=${tx1_addr:-"N/A"}
-
-log_info "TX1: $tx1_value BTC to $tx1_addr"
 
 # Check TX2
 log_info "Checking Transaction 2..."
@@ -227,13 +220,7 @@ else
     "[ \"$input2\" == \"$tx1\" ]" \
     "Chain verified: TX1 is input to TX2" \
     "Chain broken: TX1 is not input to TX2"
-  
-  # Get TX2 details
-  tx2_value=$(echo "$tx2_data" | grep -oP '"value":\K[0-9.]+')
-  tx2_addr=$(echo "$tx2_data" | grep -oP '"address":"\K[13a-km-zA-HJ-NP-Z1-9]+')
-  tx2_addr=${tx2_addr:-"N/A"}
-  
-  log_info "TX2: $tx2_value BTC to $tx2_addr"
+
 fi
 
 # Check wallet balance
