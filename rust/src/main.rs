@@ -16,7 +16,7 @@ fn create_rpc_client(url: &str, username: &str, password: &str) -> Result<Client
 
 // Create a new wallet or use existing one
 fn setup_wallet(rpc: &Client, wallet_name: &str) -> Result<Client, Box<dyn Error>> {
-    // Try to create wallet (may fail if already exists)
+    // Try to create wallet (can fail if already exists)
     match rpc.call::<serde_json::Value>("createwallet", &[wallet_name.into()]) {
         Ok(_) => println!("Wallet '{}' created successfully!", wallet_name),
         Err(e) => println!("Wallet creation note: {}", e),
@@ -86,8 +86,7 @@ fn create_and_send_transaction(
 
     if !complete {
         return Err("Transaction signing failed".into());
-    }
-    else{
+    } else {
         println!("Transaction signed successfully");
     }
 
@@ -122,22 +121,41 @@ fn main() -> Result<(), Box<dyn Error>> {
     let balance = wallet_rpc.get_balance(None, None)?;
     println!("Wallet balance: {} BTC", balance);
 
-    // List unspent transactions to find an input for our first transaction
+    // List unspent transactions to find a coinbase input for our first transaction
     let unspent = rpc.list_unspent(None, None, None, None, None)?;
     if unspent.is_empty() {
         return Err("No unspent outputs found".into());
     }
 
-    let first_utxo = &unspent[0];
+    // Find the first coinbase UTXO specifically
+    let coinbase_utxo = unspent.iter().find_map(|utxo| {
+        let raw_tx = rpc.get_raw_transaction_info(&utxo.txid, None).ok()?;
+        if raw_tx.vin[0].coinbase.is_some() {
+            Some(utxo)
+        } else {
+            None
+        }
+    });
+
+    let first_utxo = match coinbase_utxo {
+        Some(utxo) => utxo,
+        None => {
+            return Err("No coinbase UTXO found".into());
+        }
+    };
+
+    // Set up the input using this verified coinbase UTXO
     let input = CreateRawTransactionInput {
-        txid: first_utxo.txid,
+        txid: first_utxo.txid.clone(),
         vout: first_utxo.vout,
         sequence: None,
     };
 
+    println!("Using coinbase UTXO for the first transaction: {}", first_utxo.txid);
+
     // Create and send first transaction
     println!("Using coinbase output for first transaction");
-    
+
     let first_txid = create_and_send_transaction(&rpc, input, &first_address, 10.0, 0.1)?;
 
     // Generate a block to confirm the first transaction
@@ -158,8 +176,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Create and send second transaction
     let second_txid = create_and_send_transaction(&rpc, second_input, &second_address, 5.0, 0.1)?;
 
-    // Generate blocks to confirm the second transaction
-    generate_blocks(&rpc, &first_address, 101)?;
+    // Generate a block to confirm the second transaction
+    generate_blocks(&rpc, &second_address, 1)?;
     println!("Second transaction ID: {}", second_txid);
 
     println!("All steps of competency tests successfully completed!");
