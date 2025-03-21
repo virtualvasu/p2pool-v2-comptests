@@ -2,6 +2,11 @@
 #
 # Bitcoin Transaction Test Suite for Competency tests
 # Tests transaction creation and confirmation using Rust implementation
+#
+# Requirements:
+# - Docker and docker-compose
+# - Cargo
+# - curl
 
 set -e
 
@@ -150,19 +155,20 @@ log_info "Checking Transaction 1..."
 tx1_data=$(btc_rpc "getrawtransaction" "\"$tx1\", true")
 
 # Confirm TX1
-conf1=$(echo "$tx1_data" | jq -r '.result.confirmations // 0')
+conf1=$(echo "$tx1_data" | grep -oP '"confirmations":\K\d+')
 check_test "TX1 Confirmed" \
   "[ \"$conf1\" -gt 0 ]" \
   "Transaction 1 confirmed ($conf1 confirmations)" \
   "Transaction 1 not confirmed"
 
 # Get TX1 input
-input1=$(echo "$tx1_data" | jq -r '.result.vin[0].txid // empty')
+input1=$(echo "$tx1_data" | grep -oP '"vin":\[\{"txid":"\K[0-9a-f]+')
+input1=${input1:-empty}
 
 # Check TX1 source
-if [ -z "$input1" ] || [ "$input1" == "null" ]; then
+if [ -z "$input1" ] || [ "$input1" == "empty" ]; then
   # Check for coinbase
-  coinbase1=$(echo "$tx1_data" | jq -r '.result.vin[0].coinbase // empty')
+  coinbase1=$(echo "$tx1_data" | grep -oP '"coinbase":"\K[0-9a-f]+')
   
   check_test "TX1 Source" \
     "[ -n \"$coinbase1\" ]" \
@@ -173,7 +179,7 @@ else
   
   # Check if input is coinbase
   input1_data=$(btc_rpc "getrawtransaction" "\"$input1\", true")
-  is_coinbase=$(echo "$input1_data" | jq -r '.result.vin[0].coinbase // empty')
+  is_coinbase=$(echo "$input1_data" | grep -oP '"coinbase":"\K[0-9a-f]+')
   
   if [ -n "$is_coinbase" ]; then
     log_success "TX1 source is a coinbase tx"
@@ -183,8 +189,10 @@ else
 fi
 
 # Get TX1 details
-tx1_value=$(echo "$tx1_data" | jq -r '.result.vout | map(.value) | add')
-tx1_addr=$(echo "$tx1_data" | jq -r '.result.vout[0].scriptPubKey.address // "N/A"')
+tx1_value=$(echo "$tx1_data" | grep -oP '"value":\K[0-9.]+')
+tx1_addr=$(echo "$tx1_data" | grep -oP '"address":"\K[13a-km-zA-HJ-NP-Z1-9]+')
+tx1_addr=${tx1_addr:-"N/A"}
+
 log_info "TX1: $tx1_value BTC to $tx1_addr"
 
 # Check TX2
@@ -192,19 +200,20 @@ log_info "Checking Transaction 2..."
 tx2_data=$(btc_rpc "getrawtransaction" "\"$tx2\", true")
 
 # Confirm TX2
-conf2=$(echo "$tx2_data" | jq -r '.result.confirmations // 0')
+conf2=$(echo "$tx2_data" | grep -oP '"confirmations":\K\d+')
 check_test "TX2 Confirmed" \
   "[ \"$conf2\" -gt 0 ]" \
   "Transaction 2 confirmed ($conf2 confirmations)" \
   "Transaction 2 not confirmed"
 
 # Get TX2 input
-input2=$(echo "$tx2_data" | jq -r '.result.vin[0].txid // empty')
+input2=$(echo "$tx2_data" | grep -oP '"vin":\[\{"txid":"\K[0-9a-f]+')
+input2=${input2:-empty}
 
 # Check TX2 source
-if [ -z "$input2" ] || [ "$input2" == "null" ]; then
+if [ -z "$input2" ] || [ "$input2" == "empty" ]; then
   # Check for coinbase
-  coinbase2=$(echo "$tx2_data" | jq -r '.result.vin[0].coinbase // empty')
+  coinbase2=$(echo "$tx2_data" | grep -oP '"coinbase":"\K[0-9a-f]+')
   
   check_test "TX2 Source" \
     "[ -n \"$coinbase2\" ]" \
@@ -220,14 +229,16 @@ else
     "Chain broken: TX1 is not input to TX2"
   
   # Get TX2 details
-  tx2_value=$(echo "$tx2_data" | jq -r '.result.vout | map(.value) | add')
-  tx2_addr=$(echo "$tx2_data" | jq -r '.result.vout[0].scriptPubKey.address // "N/A"')
+  tx2_value=$(echo "$tx2_data" | grep -oP '"value":\K[0-9.]+')
+  tx2_addr=$(echo "$tx2_data" | grep -oP '"address":"\K[13a-km-zA-HJ-NP-Z1-9]+')
+  tx2_addr=${tx2_addr:-"N/A"}
+  
   log_info "TX2: $tx2_value BTC to $tx2_addr"
 fi
 
 # Check wallet balance
 log_header "FINAL CHECK"
-balance=$(btc_rpc "getbalance" "" | jq '.result')
+balance=$(btc_rpc "getbalance" "" | grep -oP '"result":\K[0-9.]+')
 log_info "Final balance: $balance BTC"
 
 # Show summary
